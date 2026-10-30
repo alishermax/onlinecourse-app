@@ -1,11 +1,11 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 # <HINT> Import any new Models here
-from .models import Course, Enrollment
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.models import User
-from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
 from django.views import generic
+from .models import Course, Enrollment, Question, Choice, Submission
 from django.contrib.auth import login, logout, authenticate
 import logging
 # Get an instance of a logger
@@ -132,5 +132,43 @@ def enroll(request, course_id):
         # Calculate the total score
 #def show_exam_result(request, course_id, submission_id):
 
+def extract_answers(request):
+       submitted_answers = []
+       for key in request.POST:
+           if key.startswith('choice'):
+               submitted_answers.append(int(request.POST[key]))
+       return submitted_answers
 
+
+def submit(request, course_id):
+       course = get_object_or_404(Course, pk=course_id)
+       enrollment = Enrollment.objects.get(user=request.user, course=course)
+       submission = Submission.objects.create(enrollment=enrollment)
+       choices = extract_answers(request)
+       submission.choices.set(choices)
+       return HttpResponseRedirect(
+           reverse('onlinecourse:exam_result', args=(course_id, submission.id))
+       )
+
+
+def show_exam_result(request, course_id, submission_id):
+       course = get_object_or_404(Course, pk=course_id)
+       submission = get_object_or_404(Submission, pk=submission_id)
+       selected_ids = [c.id for c in submission.choices.all()]
+
+       total_score = 0
+       possible = 0
+       for lesson in course.lesson_set.all():
+           for question in lesson.question_set.all():
+               possible += question.grade
+               if question.is_get_score(selected_ids):
+                   total_score += question.grade
+
+       grade = int(total_score / possible * 100) if possible else 0
+       context = {
+           'course': course,
+           'selected_ids': selected_ids,
+           'grade': grade,
+       }
+       return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
 
